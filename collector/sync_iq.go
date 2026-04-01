@@ -17,6 +17,7 @@ import (
 )
 
 type syncIQPoliciesCollector struct {
+	cluster                  IsilonCluster
 	syncPolicyState          *prometheus.Desc
 	syncPolicyLastSuccess    *prometheus.Desc
 	syncPolicyLastStart      *prometheus.Desc
@@ -30,48 +31,50 @@ func init() {
 	registerCollector("sync_iq", defaultEnabled, NewSyncIQCollector)
 }
 
-//NewSyncIQCollector returns a new Collector exposing sync IQ policy information.
-func NewSyncIQCollector() (Collector, error) {
+// NewSyncIQCollector returns a new Collector exposing sync IQ policy information.
+func NewSyncIQCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &syncIQPoliciesCollector{
+		cluster: cluster,
 		syncPolicyState: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "sync", "policy_state"),
 			"Last state from run of sync policy.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		syncPolicyLastSuccess: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "sync", "policy_last_success"),
 			"Epoch timestamp of the last successful sync for a policy.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		syncPolicyLastStart: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "sync", "policy_last_start"),
 			"Epoch timestame for last sync start for a policy.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		syncPolicyPriority: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "sync", "policy_priority"),
 			"Current priority for the policy.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		syncPolicyWorkersPerNode: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "sync", "policy_workers_per_node"),
 			"Number of worker threads per node for a policy.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		syncPolicyEnabled: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "sync", "policy_enabled"),
 			"1 = Enabled, 0 = Disabled for the specified policy",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		syncPolicyTotalCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "sync", "policies_total_count"),
-			"Total number of sync policies on the cluster.", nil, ConstLabels,
+			"Total number of sync policies on the cluster.", nil, constLabels,
 		),
 	}, nil
 }
 
 func (c *syncIQPoliciesCollector) Update(ch chan<- prometheus.Metric) error {
-	resp, err := isiclient.GetSyncPolicies(IsiCluster.Client)
+	resp, err := isiclient.GetSyncPolicies(c.cluster.Client)
 	if err != nil {
 		log.Warnf("Error attempting to view sync policies.")
 	}

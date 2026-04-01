@@ -18,6 +18,7 @@ import (
 )
 
 type quotaSummaryCollector struct {
+	cluster                       IsilonCluster
 	quotaSummaryTotalCount        *prometheus.Desc
 	quotaSummaryDefaultGroupCount *prometheus.Desc
 	quotaSummaryDefaultUserCount  *prometheus.Desc
@@ -31,49 +32,50 @@ func init() {
 	registerCollector("quota_summary", defaultEnabled, NewQuotaSummaryCollector)
 }
 
-//NewQuotaSummaryCollector returns a new Collector exposing quota summary information.
-func NewQuotaSummaryCollector() (Collector, error) {
+// NewQuotaSummaryCollector returns a new Collector exposing quota summary information.
+func NewQuotaSummaryCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &quotaSummaryCollector{
+		cluster: cluster,
 		quotaSummaryTotalCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "summary_total_quotas_count"),
 			"Total number of quotas on a cluster.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		quotaSummaryDefaultGroupCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "summary_default_group_quotas_count"),
 			"Number of default group quotas.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		quotaSummaryDefaultUserCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "summary_default_user_quotas_count"),
 			"Number of default user quotas.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		quotaSummaryDirectoryCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "summary_directory_quotas_count"),
 			"Number of directory quotas.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		quotaSummaryGroupCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "summary_group_quotas_count"),
 			"Number of group quotas.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		quotaSummaryLinkedCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "summary_linked_quotas_count"),
 			"Number of linked quotas.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		quotaSummaryUserCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "summary_quotas_user"),
 			"Number of user quotas.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 	}, nil
 }
 
 func (c *quotaSummaryCollector) Update(ch chan<- prometheus.Metric) error {
-	//Get quota summary statistics
 	err := c.updateQuotaSummary(ch)
 	if err != nil {
 		log.Warn("Unable to collect quota summary information.")
@@ -83,7 +85,7 @@ func (c *quotaSummaryCollector) Update(ch chan<- prometheus.Metric) error {
 }
 
 func (c *quotaSummaryCollector) updateQuotaSummary(ch chan<- prometheus.Metric) error {
-	summary, err := isiclient.GetQuotaSummary(IsiCluster.Client)
+	summary, err := isiclient.GetQuotaSummary(c.cluster.Client)
 	if err != nil {
 		log.Warn("Unabled to update quota summary information.")
 		return err

@@ -1,0 +1,70 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: isilon-exporter
+  name: isilon-exporter
+  namespace: monitoring
+spec:
+  endpoints:
+  - interval: 30s
+    scrapeTimeout: 25s
+    path: /metrics
+    port: metrics
+    scheme: http
+    params:
+      target:
+      - 10.142.94.17
+    relabelings:
+    - sourceLabels: [__param_target]
+      targetLabel: instance
+  - interval: 30s
+    scrapeTimeout: 25s
+    path: /metrics
+    port: metrics
+    scheme: http
+    params:
+      target:
+      - 10.142.95.17
+    relabelings:
+    - sourceLabels: [__param_target]
+      targetLabel: instance
+  - interval: 30s
+    scrapeTimeout: 25s
+    path: /metrics
+    port: metrics
+    scheme: http
+    params:
+      target:
+      - 10.142.96.17
+    relabelings:
+    - sourceLabels: [__param_target]
+      targetLabel: instance
+  - interval: 30s
+    scrapeTimeout: 25s
+    path: /metrics
+    port: metrics
+    scheme: http
+    params:
+      target:
+      - 10.142.97.17
+    relabelings:
+    - sourceLabels: [__param_target]
+      targetLabel: instance
+  - interval: 30s
+    scrapeTimeout: 25s
+    path: /metrics
+    port: metrics
+    scheme: http
+    params:
+      target:
+      - 10.142.98.17
+    relabelings:
+    - sourceLabels: [__param_target]
+      targetLabel: instance
+  namespaceSelector:
+    matchNames:
+    - monitoring
+  selector:
+    matchLabels:
+      app: isilon-exporter

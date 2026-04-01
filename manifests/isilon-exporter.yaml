@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: isilon-exporter
+  name: isilon-exporter
+  namespace: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: isilon-exporter
+  template:
+    metadata:
+      labels:
+        app: isilon-exporter
+    spec:
+      imagePullSecrets:
+        - name: tbspool
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - image: lcc-elh-repo-01.mvr.bg:80/tbspool/isilon-exporter:latest
+        name: isilon-exporter
+        ports:
+        - containerPort: 9300
+          name: metrics
+        envFrom:
+        - secretRef:
+            name: isilon-exporter-secret
+        args:
+        - "--config.file=/etc/isilon-exporter/clusters.yaml"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/isilon-exporter
+          readOnly: true
+        resources:
+          requests:
+            cpu: 120m
+            memory: 200Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: config
+        configMap:
+          name: isilon-exporter-config

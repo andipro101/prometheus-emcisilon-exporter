@@ -21,6 +21,7 @@ import (
 )
 
 type clusterProtoCollector struct {
+	cluster                     IsilonCluster
 	clusterProtocolInMax        *prometheus.Desc
 	clusterProtocolInMin        *prometheus.Desc
 	clusterProtocolInRate       *prometheus.Desc
@@ -52,118 +53,120 @@ func init() {
 	}
 }
 
-//NewClusterProtoCollector returns a new Collector exposing cluster protocol statistics.
-func NewClusterProtoCollector() (Collector, error) {
+// NewClusterProtoCollector returns a new Collector exposing cluster protocol statistics.
+func NewClusterProtoCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &clusterProtoCollector{
+		cluster: cluster,
 		clusterProtocolInMax: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_in_max"),
 			"Cluster protocol operation in max.",
-			[]string{"proto", "op"}, ConstLabels,
+			[]string{"proto", "op"}, constLabels,
 		),
 		clusterProtocolInMin: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_in_min"),
 			"Cluster protocol operation in min.",
-			[]string{"proto", "op"}, ConstLabels,
+			[]string{"proto", "op"}, constLabels,
 		),
 		clusterProtocolInRate: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_in_rate"),
 			"Cluster protocol operation in rate.",
-			[]string{"proto", "op"}, ConstLabels,
+			[]string{"proto", "op"}, constLabels,
 		),
 		clusterProtocolOpCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_op_count"),
 			"Cluster protocol operation count.",
-			[]string{"proto", "op"}, ConstLabels,
+			[]string{"proto", "op"}, constLabels,
 		),
 		clusterProtocolOpRate: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_op_rate"),
 			"Cluster protocol operation rate.",
-			[]string{"proto", "op"}, ConstLabels,
+			[]string{"proto", "op"}, constLabels,
 		),
 		clusterProtocolOutMax: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_out_max"),
 			"Cluster protocol operation out max.",
-			[]string{"proto", "op"}, ConstLabels,
+			[]string{"proto", "op"}, constLabels,
 		),
 		clusterProtocolOutMin: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_out_min"),
 			"Cluster protocol operation out min.",
-			[]string{"proto", "op"}, ConstLabels,
+			[]string{"proto", "op"}, constLabels,
 		),
 		clusterProtocolOutRate: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_out_rate"),
 			"Cluster protocol operation out rate.",
-			[]string{"proto", "op"}, ConstLabels,
+			[]string{"proto", "op"}, constLabels,
 		),
 		clusterProtocolTimeAvg: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_time_avg"),
 			"Cluster protocol operation time average.",
-			[]string{"proto", "op"}, ConstLabels,
+			[]string{"proto", "op"}, constLabels,
 		),
 		clusterProtocolTimeMax: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_time_max"),
 			"Cluster protocol operation time max.",
-			[]string{"proto", "op"}, ConstLabels,
+			[]string{"proto", "op"}, constLabels,
 		),
 		clusterProtocolTimeMin: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_time_min"),
 			"Total cluster protocol operation in rate.",
-			[]string{"proto", "op"}, ConstLabels,
+			[]string{"proto", "op"}, constLabels,
 		),
 		clusterProtocolTotalInMax: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_in_max_total"),
 			"Total cluster protocol operation in max.",
-			[]string{"proto"}, ConstLabels,
+			[]string{"proto"}, constLabels,
 		),
 		clusterProtocolTotalInMin: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_in_min_total"),
 			"Total cluster protocol operation in min.",
-			[]string{"proto"}, ConstLabels,
+			[]string{"proto"}, constLabels,
 		),
 		clusterProtocolTotalInRate: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_in_rate_total"),
 			"Total cluster protocol operation in rate.",
-			[]string{"proto"}, ConstLabels,
+			[]string{"proto"}, constLabels,
 		),
 		clusterProtocolTotalOpCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_op_count_total"),
 			"Total cluster protocol operation count.",
-			[]string{"proto"}, ConstLabels,
+			[]string{"proto"}, constLabels,
 		),
 		clusterProtocolTotalOpRate: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_op_rate_total"),
 			"Total cluster protocol operation rate.",
-			[]string{"proto"}, ConstLabels,
+			[]string{"proto"}, constLabels,
 		),
 		clusterProtocolTotalOutMax: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_out_max_total"),
 			"Total cluster protocol operation out max.",
-			[]string{"proto"}, ConstLabels,
+			[]string{"proto"}, constLabels,
 		),
 		clusterProtocolTotalOutMin: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_out_min_total"),
 			"Total cluster protocol operation out min.",
-			[]string{"proto"}, ConstLabels,
+			[]string{"proto"}, constLabels,
 		),
 		clusterProtocolTotalOutRate: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_out_rate_total"),
 			"Total cluster protocol operation out rate.",
-			[]string{"proto"}, ConstLabels,
+			[]string{"proto"}, constLabels,
 		),
 		clusterProtocolTotalTimeAvg: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_time_avg_total"),
 			"Total cluster protocol operation time average.",
-			[]string{"proto"}, ConstLabels,
+			[]string{"proto"}, constLabels,
 		),
 		clusterProtocolTotalTimeMax: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_time_max_total"),
 			"Total cluster protocol operation time max.",
-			[]string{"proto"}, ConstLabels,
+			[]string{"proto"}, constLabels,
 		),
 		clusterProtocolTotalTimeMin: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "protostats_time_min_total"),
 			"Total cluster protocol operation in rate.",
-			[]string{"proto"}, ConstLabels,
+			[]string{"proto"}, constLabels,
 		),
 	}, nil
 }
@@ -202,21 +205,20 @@ func (c *clusterProtoCollector) Update(ch chan<- prometheus.Metric) error {
 func (c *clusterProtoCollector) updateProtoOpStats(ch chan<- prometheus.Metric, protocol string) error {
 	key := fmt.Sprintf("cluster.protostats.%v", protocol)
 	begin := time.Now()
-	resp, err := isiclient.GetProtoStat(IsiCluster.Client, key)
+	resp, err := isiclient.GetProtoStat(c.cluster.Client, key)
 	duration := time.Since(begin)
-	ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), key)
+	ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), key, c.cluster.Name)
 	if err != nil {
 		log.Warnf("Unable to collect protocol stats for protocol %s.", protocol)
-		ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, key)
+		ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, key, c.cluster.Name)
 		return err
 	}
-	ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, key)
+	ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, key, c.cluster.Name)
 	for _, stat := range resp.Stats {
 		if stat.Value != nil {
 			values := stat.Value.([]interface{})
 			if len(values) > 0 {
 				for _, value := range values {
-					//Now that we know there is data in this interface, marshal into json and back out into a struct
 					var protoStat isiclient.IsiProtoStatOp
 					j, jerr := json.Marshal(value)
 					if err != nil {
@@ -227,7 +229,6 @@ func (c *clusterProtoCollector) updateProtoOpStats(ch chan<- prometheus.Metric, 
 					if err != nil {
 						log.Warnf("Could not unmarshl into stuct: %v", err)
 					}
-					//Add metrics for each item
 					ch <- prometheus.MustNewConstMetric(c.clusterProtocolInMax, prometheus.GaugeValue, protoStat.InMax, protocol, protoStat.OpName)
 					ch <- prometheus.MustNewConstMetric(c.clusterProtocolInMin, prometheus.GaugeValue, protoStat.InMin, protocol, protoStat.OpName)
 					ch <- prometheus.MustNewConstMetric(c.clusterProtocolInRate, prometheus.GaugeValue, protoStat.InRate, protocol, protoStat.OpName)
@@ -251,15 +252,15 @@ func (c *clusterProtoCollector) updateProtoOpStats(ch chan<- prometheus.Metric, 
 func (c *clusterProtoCollector) updateProtoStats(ch chan<- prometheus.Metric, protocol string) error {
 	key := fmt.Sprintf("cluster.protostats.%s.total", protocol)
 	begin := time.Now()
-	resp, err := isiclient.GetProtoStat(IsiCluster.Client, key)
+	resp, err := isiclient.GetProtoStat(c.cluster.Client, key)
 	duration := time.Since(begin)
-	ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), key)
+	ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), key, c.cluster.Name)
 	if err != nil {
 		log.Warnf("Unable to collect cluster protocol stats for protocol %s.", protocol)
-		ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, key)
+		ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, key, c.cluster.Name)
 		return err
 	}
-	ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, key)
+	ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, key, c.cluster.Name)
 
 	for _, stat := range resp.Stats {
 		if stat.Value != nil {
@@ -267,7 +268,6 @@ func (c *clusterProtoCollector) updateProtoStats(ch chan<- prometheus.Metric, pr
 
 			if len(values) > 0 {
 				for _, value := range values {
-					//Now that we know there is data in this interface, marshal into json and back out into a struct
 					var protoStat isiclient.IsiProtoStatTotal
 					j, jerr := json.Marshal(value)
 					if jerr != nil {

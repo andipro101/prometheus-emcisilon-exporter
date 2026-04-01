@@ -20,6 +20,7 @@ import (
 )
 
 type snapshotsCollector struct {
+	cluster                IsilonCluster
 	snapshotsTotalCount    *prometheus.Desc
 	snapshotsTotalSize     *prometheus.Desc
 	snapshotsActiveCount   *prometheus.Desc
@@ -37,63 +38,65 @@ func init() {
 	registerCollector("snapshots", defaultEnabled, NewSnapshotsCollector)
 }
 
-//NewSnapshotsCollector returns a new Collector exposing sync IQ policy information.
-func NewSnapshotsCollector() (Collector, error) {
+// NewSnapshotsCollector returns a new Collector exposing snapshot information.
+func NewSnapshotsCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &snapshotsCollector{
+		cluster: cluster,
 		snapshots7DayCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "snapshots", "7_day_count"),
 			"Number of snapshots older than 7 days.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		snapshots15DayCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "snapshots", "15_day_count"),
 			"Number of snapshots older than 15 days.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		snapshots30DayCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "snapshots", "30_day_count"),
 			"Number of snapshots older than 30 days",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		snapshots60DayCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "snapshots", "60_day_count"),
 			"Number of snapshots older than 60 days.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		snapshots90DayCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "snapshots", "90_day_count"),
 			"Number of snapshots older than 90 days.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		snapshotsActiveCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "snapshots", "active_count"),
 			"Number of snapshots that are active on the system.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		snapshotsActiveSize: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "snapshots", "active_size"),
 			"Size in bytes of space occupied by active snapshots.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		snapshotsDeletingCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "snapshots", "deleting_count"),
 			"Number of snapshots that are being deleted from the system.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		snapshotsDeletingSize: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "snapshots", "deleting_size"),
 			"Size in bytes of space occupied by snapshots being deleted. ",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		snapshotsTotalCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "snapshots", "total_count"),
 			"Total number of snapshots (both active and deleting) on a cluster.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		snapshotsTotalSize: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "snapshots", "total_size"),
 			"Size in bytes of space occupides by all snapshots.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 	}, nil
 }
@@ -116,7 +119,7 @@ func (c *snapshotsCollector) Update(ch chan<- prometheus.Metric) error {
 }
 
 func (c *snapshotsCollector) updateSummary(ch chan<- prometheus.Metric) error {
-	resp, err := isiclient.GetSnapshotsSummary(IsiCluster.Client)
+	resp, err := isiclient.GetSnapshotsSummary(c.cluster.Client)
 	if err != nil {
 		return err
 	}
@@ -138,9 +141,6 @@ func (c *snapshotsCollector) updateDayCounts(ch chan<- prometheus.Metric) error 
 		PromDesc *prometheus.Desc
 	}
 
-	//You should increase the size of the array if you are adding new thresholds.
-	//Make sure to add a new prometheus descriptor to the snapshotsCollector stuct.
-	//Make sure to keep thresholds in increasing order of days.
 	var thresholds = []TimeThreshold{
 		{"7d", 7, 0, c.snapshots7DayCount},
 		{"15d", 15, 0, c.snapshots15DayCount},
@@ -149,7 +149,7 @@ func (c *snapshotsCollector) updateDayCounts(ch chan<- prometheus.Metric) error 
 		{"90d", 90, 0, c.snapshots90DayCount},
 	}
 
-	resp, err := isiclient.GetSnapshots(IsiCluster.Client)
+	resp, err := isiclient.GetSnapshots(c.cluster.Client)
 	if err != nil {
 		return err
 	}
@@ -161,8 +161,6 @@ func (c *snapshotsCollector) updateDayCounts(ch chan<- prometheus.Metric) error 
 			if days >= thresholds[idx].Days {
 				thresholds[idx].Counter++
 			} else {
-				//We assume consistent order in the thresold array.
-				//Since the thresolds only get larger, if we fail one then move on to the next snapshot.
 				break
 			}
 		}
@@ -174,7 +172,7 @@ func (c *snapshotsCollector) updateDayCounts(ch chan<- prometheus.Metric) error 
 	return nil
 }
 
-//RoundTime - Well gotta deal with those floating point numbers somehow
+// RoundTime - Well gotta deal with those floating point numbers somehow
 func RoundTime(input float64) int64 {
 	var result float64
 

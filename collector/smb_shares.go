@@ -16,6 +16,7 @@ import (
 )
 
 type smbSharesCollector struct {
+	cluster     IsilonCluster
 	sharesCount *prometheus.Desc
 }
 
@@ -23,19 +24,21 @@ func init() {
 	registerCollector("smb_shares", defaultEnabled, NewSmbSharesCollector)
 }
 
-//NewSmbSharesCollector exposed various metrics and information about nodes.
-func NewSmbSharesCollector() (Collector, error) {
+// NewSmbSharesCollector exposed various metrics and information about SMB shares.
+func NewSmbSharesCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &smbSharesCollector{
+		cluster: cluster,
 		sharesCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "smb", "share_total"),
 			"Total number of SMB shares on a cluster.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 	}, nil
 }
 
 func (c *smbSharesCollector) Update(ch chan<- prometheus.Metric) error {
-	resp, err := isiclient.GetSharesSummary(IsiCluster.Client)
+	resp, err := isiclient.GetSharesSummary(c.cluster.Client)
 	if err != nil {
 		return err
 	}

@@ -20,6 +20,7 @@ import (
 )
 
 type nodeStatusCollector struct {
+	cluster         IsilonCluster
 	nodeBattery     *prometheus.Desc
 	nodePowerSupply *prometheus.Desc
 	nodeDriveState  *prometheus.Desc
@@ -32,34 +33,36 @@ func init() {
 	registerCollector("node_info", defaultEnabled, NewNodeStatusCollector)
 }
 
-//NewNodeStatusCollector exposed various metrics and information about nodes.
-func NewNodeStatusCollector() (Collector, error) {
+// NewNodeStatusCollector exposed various metrics and information about nodes.
+func NewNodeStatusCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &nodeStatusCollector{
+		cluster: cluster,
 		nodeInfo: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "info"),
 			"Contains information about each node in labels. Always returns a 1.",
-			[]string{"id", "infiniband", "motherboard", "generation_code", "chassis_code", "lnn", "hwgen", "nvram", "chassis_count", "serial_number", "disk_expander", "disk_collector", "family_code", "product", "class", "cpu", "chassis", "proc_count", "proc_type", "name"}, ConstLabels,
+			[]string{"id", "infiniband", "motherboard", "generation_code", "chassis_code", "lnn", "hwgen", "nvram", "chassis_count", "serial_number", "disk_expander", "disk_collector", "family_code", "product", "class", "cpu", "chassis", "proc_count", "proc_type", "name"}, constLabels,
 		),
 		nodeBattery: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "status_battery"),
 			"Status for batteries.",
-			[]string{"node", "node_id", "result1", "result2"}, ConstLabels,
+			[]string{"node", "node_id", "result1", "result2"}, constLabels,
 		),
 		nodePowerSupply: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "status_power_supply"),
 			"Status for power supplies.",
-			[]string{"node", "node_id", "power_supply", "status", "good"}, ConstLabels,
+			[]string{"node", "node_id", "power_supply", "status", "good"}, constLabels,
 		),
 		nodeDriveState: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "drive_state"),
 			"Current state of the drive in a bay. 0 = HEALTHY/L3, 1 = STALLED, 2 = FW_UPDATE, 3 = SMARTFAILED, 4 = USED, 5 = PREPARING, 10 = NEW, 11 = EMPTY, 12 = REPLACE, 99 = UNKNOWN.",
-			[]string{"node", "node_id", "bay_num", "media_type", "model", "interaface_type", "dev_name", "state"}, ConstLabels,
+			[]string{"node", "node_id", "bay_num", "media_type", "model", "interaface_type", "dev_name", "state"}, constLabels,
 		),
 	}, nil
 }
 
 func (c *nodeStatusCollector) Update(ch chan<- prometheus.Metric) error {
-	resp, err := isiclient.GetNodesStatus(IsiCluster.Client)
+	resp, err := isiclient.GetNodesStatus(c.cluster.Client)
 	if err != nil {
 		log.Warnf("Unable to get node status from API. %s", err)
 	}
@@ -119,7 +122,7 @@ func (c *nodeStatusCollector) updatePowerSupplyStatus(ch chan<- prometheus.Metri
 }
 
 func (c *nodeStatusCollector) updateDriveStatus(ch chan<- prometheus.Metric) error {
-	resp, err := isiclient.GetDriveInfo(IsiCluster.Client)
+	resp, err := isiclient.GetDriveInfo(c.cluster.Client)
 	if err != nil {
 		log.Warnf("Unabled to collect drive status. %s", err)
 		return err
@@ -161,7 +164,7 @@ func (c *nodeStatusCollector) updateDriveStatus(ch chan<- prometheus.Metric) err
 
 func (c *nodeStatusCollector) updateNodeInfo(ch chan<- prometheus.Metric) error {
 	var na = "n/a"
-	resp, err := isiclient.GetNodesHardware(IsiCluster.Client)
+	resp, err := isiclient.GetNodesHardware(c.cluster.Client)
 	if err != nil {
 		return fmt.Errorf("Unable to collect hardware info. %s", err)
 	}
@@ -225,7 +228,7 @@ func (c *nodeStatusCollector) updateNodeInfo(ch chan<- prometheus.Metric) error 
 			procCount = subProcs[0]
 			procType = strings.TrimSpace(subProcs[1])
 		}
-		name := fmt.Sprintf("%v-%v", IsiCluster.Name, lnnID)
+		name := fmt.Sprintf("%v-%v", c.cluster.Name, lnnID)
 		ch <- prometheus.MustNewConstMetric(c.nodeInfo, prometheus.GaugeValue, float64(1), nodeID, infini, mobo, node.GenerationCode, node.ChassisCode, lnnID, hwgen, nvram, chassisCount, node.SerialNumber, diskExp, diskCtl, node.FamilyCode, product, node.Class, cpu, chassis, procCount, procType, name)
 	}
 	return nil

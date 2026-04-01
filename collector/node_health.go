@@ -20,6 +20,7 @@ import (
 )
 
 type nodeHealthCollector struct {
+	cluster                IsilonCluster
 	nodeNvramBatteryStatus *prometheus.Desc
 	nodeProcessCount       *prometheus.Desc
 	nodeFilesOpen          *prometheus.Desc
@@ -34,48 +35,50 @@ func init() {
 	registerCollector("node_health", defaultEnabled, NewNodeHealthCollector)
 }
 
-//NewNodeHealthCollector returns a new Collector exposing node health information.
-func NewNodeHealthCollector() (Collector, error) {
+// NewNodeHealthCollector returns a new Collector exposing node health information.
+func NewNodeHealthCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &nodeHealthCollector{
+		cluster: cluster,
 		nodeProcessCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "process_count"),
 			"Number of processess on the node.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		nodeNvramBatteryStatus: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "nvram_battery_status"),
 			"Combined charge status for all batteries. 0 = Not available, 1 = Good, 2 = Caution, 3 = Error.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		nodeFilesOpen: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "open_files"),
 			"Number of open files on the node.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		nodeDiskUnhealthyCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "disk_unhealthy_count"),
 			"Number of unhealthy disk per node as an int.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		nodeHealth: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "health"),
 			"Current health of a node from the view of the onefs cluster.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		nodeDiskCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "disk_count"),
 			"Number of disk per node as seen by the onefs system.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		nodeBootTime: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "boottime"),
 			"Unix timestamp of when a load booted.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		nodeUptime: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "uptime"),
 			"Current uptime of a node in seconds.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 	}, nil
 }
@@ -94,14 +97,14 @@ func (c *nodeHealthCollector) Update(ch chan<- prometheus.Metric) error {
 
 	for promStat, statKey := range keyMap {
 		begin := time.Now()
-		resp, err := isiclient.QueryStatsEngineSingleVal(IsiCluster.Client, statKey)
+		resp, err := isiclient.QueryStatsEngineSingleVal(c.cluster.Client, statKey)
 		duration := time.Since(begin)
-		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey)
+		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey, c.cluster.Name)
 		if err != nil {
 			log.Warnf("Error attempting to query stats engine with key %s: %s", statKey, err)
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey, c.cluster.Name)
 		} else {
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey, c.cluster.Name)
 			for _, stat := range resp.Stats {
 				node := fmt.Sprintf("%v", stat.Devid)
 				ch <- prometheus.MustNewConstMetric(promStat, prometheus.GaugeValue, stat.Value, node)

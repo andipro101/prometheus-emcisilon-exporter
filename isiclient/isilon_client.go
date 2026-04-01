@@ -22,10 +22,10 @@ import (
 )
 
 // NewIsilonClient creates and isilon client from goisilon.NewClientsWithArgs.
-func NewIsilonClient(fqdn string, port string, username string, passwordEnv string) (*goisilon.Client, error) {
+func NewIsilonClient(host string, port string, username string, passwordEnv string) (*goisilon.Client, error) {
 	// Setup the client from the cluster info and return the client.
-	//Build endpoint from fqdn and port. Force HTTPS as we are using basic auth.
-	endpoint := fmt.Sprintf("https://%s:%s", fqdn, port)
+	//Build endpoint from host and port. Force HTTPS as we are using basic auth.
+	endpoint := fmt.Sprintf("https://%s:%s", host, port)
 
 	//Get the password from the provided environment variable.
 	password, ok := os.LookupEnv(passwordEnv)

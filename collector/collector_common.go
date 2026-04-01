@@ -13,27 +13,14 @@ package collector
 
 import (
 	"github.com/adobe/prometheus-emcisilon-exporter/isiclient"
+	"github.com/hpanike/goisilon"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/log"
-	"github.com/hpanike/goisilon"
 )
 
-var (
-	//IsiCluster is the structure that holds all the information need to establish the connection.
-	IsiCluster IsilonCluster
-	//ConstLabels are constant labels that every metric will have.  This includes the label cluster.
-	ConstLabels prometheus.Labels
-
-	statsEngineCallDuration *prometheus.Desc
-	statsEngineCallFailure  *prometheus.Desc
-	exporterDurationDesc    *prometheus.Desc
-	scrapeSuccessDesc       *prometheus.Desc
-	scrapeDurationDesc      *prometheus.Desc
-)
-
-//IsilonCluster struct contains all the connection info and an instanciated client connection to the cluster.
+// IsilonCluster struct contains all the connection info and an instantiated client connection to the cluster.
 type IsilonCluster struct {
-	FQDN        string
+	Host        string
 	Name        string
 	Port        string
 	Username    string
@@ -44,7 +31,7 @@ type IsilonCluster struct {
 	Client      *goisilon.Client
 }
 
-//Quotas struct contains information for to quota only collections
+// Quotas struct contains information for quota-only collections.
 type Quotas struct {
 	Count  int64
 	Errors int64
@@ -52,53 +39,44 @@ type Quotas struct {
 	Retry  int64
 }
 
-//SetClusterConfigName will get the name from the isi config and set it as IsilonClusterConfigName inside IsiCluster.
-func SetClusterConfigName() error {
-	clusterName, err := isiclient.GetClusterName(IsiCluster.Client)
+// Connect creates a client connection to the Isilon cluster.
+func (c *IsilonCluster) Connect() error {
+	con, err := isiclient.NewIsilonClient(c.Host, c.Port, c.Username, c.PasswordEnv)
 	if err != nil {
-		log.Warnf("Unabled to obtain cluster name from isi config.")
+		log.Warn("Unable to create connection to the Isilon cluster.")
 		return err
 	}
-	IsiCluster.Name = clusterName
-
-	err = CreateConstLabels()
-	if err != nil {
-		log.Warnf("Unable to create const labels.")
-	}
+	c.Client = con
 	return nil
 }
 
-//GetClusterConnector calls the isiclient and creates a new isilon cluster connector.
-func GetClusterConnector() error {
-	con, err := isiclient.NewIsilonClient(IsiCluster.FQDN, IsiCluster.Port, IsiCluster.Username, IsiCluster.PasswordEnv)
+// FetchName retrieves the cluster name from the identity endpoint and stores it.
+func (c *IsilonCluster) FetchName() error {
+	clusterName, err := isiclient.GetClusterName(c.Client)
 	if err != nil {
-		log.Warn("Unabled to create connection to the Isilon cluster.")
+		log.Warnf("Unable to obtain cluster name from isi config.")
 		return err
 	}
-	IsiCluster.Client = con
+	c.Name = clusterName
+	log.Debugf("Cluster name is %s", c.Name)
 	return nil
 }
 
-//CreateConstLabels will create an array of labels that are constant to all metrics.
-func CreateConstLabels() error {
-	//Only create a const label for site if a site has been specified.
-	if IsiCluster.Site != "" {
-		ConstLabels = prometheus.Labels{"cluster": IsiCluster.Name, "site": IsiCluster.Site}
-	} else {
-		ConstLabels = prometheus.Labels{"cluster": IsiCluster.Name}
+// FetchNumQuotas retrieves the number of quotas on the system.
+func (c *IsilonCluster) FetchNumQuotas() error {
+	summary, err := isiclient.GetQuotaSummary(c.Client)
+	if err != nil {
+		log.Warn("Unable to update quota summary information.")
+		return err
 	}
-	log.Debugf("ConstLables are %v", ConstLabels)
+	c.Quotas.Count = int64(summary.Count)
 	return nil
 }
 
-//GetNumQuotas retrieve the number of quotas the system should have.
-func GetNumQuotas() error {
-	summary, err := isiclient.GetQuotaSummary(IsiCluster.Client)
-	if err != nil {
-		log.Warn("Unabled to update quota summary information.")
-		return err
+// makeConstLabels builds a prometheus.Labels map for the given cluster.
+func makeConstLabels(cluster IsilonCluster) prometheus.Labels {
+	if cluster.Site != "" {
+		return prometheus.Labels{"cluster": cluster.Name, "site": cluster.Site}
 	}
-	IsiCluster.Quotas.Count = int64(summary.Count)
-
-	return nil
+	return prometheus.Labels{"cluster": cluster.Name}
 }

@@ -1,7 +1,7 @@
 FROM golang:1.12
 
 ENV GO111MODULE=on
-ENV GOOS=linux GARCH=amd64 CGO_ENABLED=0
+ENV GOOS=linux GOARCH=amd64 CGO_ENABLED=0
 
 WORKDIR ${GOPATH}/src/github.com/adobe/prometheus-emcisilon-exporter
 

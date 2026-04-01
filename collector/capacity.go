@@ -21,6 +21,7 @@ import (
 )
 
 type capacityCollector struct {
+	cluster      IsilonCluster
 	bytesTotal   *prometheus.Desc
 	bytesUsed    *prometheus.Desc
 	bytesAvail   *prometheus.Desc
@@ -38,43 +39,45 @@ func init() {
 	registerCollector("capacity", defaultEnabled, NewCapacityCollector)
 }
 
-//NewCapacityCollector returns a new Collector exposing cluster capacity/disk space statistics.
-func NewCapacityCollector() (Collector, error) {
+// NewCapacityCollector returns a new Collector exposing cluster capacity/disk space statistics.
+func NewCapacityCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &capacityCollector{
+		cluster: cluster,
 		bytesTotal: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, ifsSubSystem, "bytes_total"),
 			"Current ifs filesystem capacity total in bytes.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		bytesUsed: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, ifsSubSystem, "bytes_used"),
 			"Current ifs filesystem capacity used in bytes.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		bytesAvail: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, ifsSubSystem, "bytes_avail"),
 			"Current ifs filesystem capacity available in bytes.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		bytesFree: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, ifsSubSystem, "bytes_free"),
 			"Current ifs filesystem capacity free in bytes.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		percentUsed: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, ifsSubSystem, "percent_used"),
 			"Current ifs filesystem capacity used in as a percentage from 0.0 - 1.0.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		percentAvail: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, ifsSubSystem, "percent_avail"),
 			"Current ifs filesystem capacity available as a percentage from 0.0 - 1.0.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		percentFree: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, ifsSubSystem, "percent_free"),
 			"Current ifs filesystem capacity free as a percentage from 0.0 - 1.0.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 	}, nil
 }
@@ -93,15 +96,15 @@ func (c *capacityCollector) Update(ch chan<- prometheus.Metric) error {
 
 	for promStat, statKey := range keyMap {
 		begin := time.Now()
-		resp, err := isiclient.QueryStatsEngineSingleVal(IsiCluster.Client, statKey)
+		resp, err := isiclient.QueryStatsEngineSingleVal(c.cluster.Client, statKey)
 		duration := time.Since(begin)
-		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey)
+		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey, c.cluster.Name)
 		if err != nil {
 			log.Warnf("Error attempting to query stats engine with key %s: %s", statKey, err)
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey, c.cluster.Name)
 			errCount++
 		} else {
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey, c.cluster.Name)
 			for _, stat := range resp.Stats {
 				ch <- prometheus.MustNewConstMetric(promStat, prometheus.GaugeValue, stat.Value)
 			}

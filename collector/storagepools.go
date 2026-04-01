@@ -19,6 +19,7 @@ import (
 )
 
 type storagePoolsCollector struct {
+	cluster                        IsilonCluster
 	storagePoolTotal               *prometheus.Desc
 	storagePoolManual              *prometheus.Desc
 	storagePoolAvailBytes          *prometheus.Desc
@@ -35,64 +36,66 @@ func init() {
 	registerCollector("storage_pools", defaultEnabled, NewStoragePoolsCollector)
 }
 
-//NewStoragePoolsCollector exposed various metrics and information about storage pools.
-func NewStoragePoolsCollector() (Collector, error) {
+// NewStoragePoolsCollector exposed various metrics and information about storage pools.
+func NewStoragePoolsCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &storagePoolsCollector{
+		cluster: cluster,
 		storagePoolTotal: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "storage_pool", "total"),
 			"Total number of storage pools on a cluster.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		storagePoolManual: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "storage_pool", "manual"),
 			"0 of storage pool is not manually managed, 1 is it is.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		storagePoolAvailBytes: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "storage_pool", "bytes_avail"),
 			"Number of bytes available on the storage pool.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		storagePoolAvailSSDBytes: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "storage_pool", "bytes_avail_ssd"),
 			"Number of bytes available on ssd for the storage pool.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		storagePoolBalaced: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "storage_pool", "balanced"),
 			"0 if the storage pool is balanced, 1 if it is not.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		storagePoolFreeBytes: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "storage_pool", "bytes_free"),
 			"Number of bytes available on the storage pool.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		storagePoolFreeSSDBytes: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "storage_pool", "bytes_free_ssd"),
 			"Number of bytes free on ssd for the storage pool.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		storagePoolTotalBytes: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "storage_pool", "bytes_total"),
 			"Total number of bytes on the storage pool.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		storagePoolTotalSSDBytes: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "storage_pool", "bytes_total_ssd"),
 			"Total number of bytes on ssd for the storage pool.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 		storagePoolVirtalHotSpareBytes: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "storage_pool", "bytes_virtual_hot_spare"),
 			"Number of bytes in vhs for the storage pool.",
-			[]string{"name"}, ConstLabels,
+			[]string{"name"}, constLabels,
 		),
 	}, nil
 }
 
 func (c *storagePoolsCollector) Update(ch chan<- prometheus.Metric) error {
-	resp, err := isiclient.GetStoragePools(IsiCluster.Client)
+	resp, err := isiclient.GetStoragePools(c.cluster.Client)
 	if err != nil {
 		return err
 	}

@@ -25,14 +25,8 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
-var (
-	fqdn   *string
-	port   *string
-	uname  *string
-	pwdenv *string
-	site   *string
-	qOnly  *bool
-)
+// clusterMap is populated at startup and maps host -> ClusterConfig.
+var clusterMap map[string]ClusterConfig
 
 // Registers the isilon_exporter as a prometheus collector
 func init() {
@@ -40,16 +34,54 @@ func init() {
 	version.BuildDate = fmt.Sprintf("%v", time.Now())
 	version.BuildUser = "panike"
 	prometheus.MustRegister(version.NewCollector("prometheus_emcisilon_exporter"))
-
 }
 
-// Handler takes care of the local http traffic.
+// handler serves /metrics for a single target cluster.
 func handler(w http.ResponseWriter, r *http.Request) {
 	filters := r.URL.Query()["collect[]"]
 	log.Debugln("collect query:", filters)
 
-	//Creates a new isilon collector with filters applied. (Kingpin flags)
-	nc, err := collector.NewIsilonCollector(*fqdn, *port, *uname, *pwdenv, *site, true, *qOnly, filters...)
+	target := r.URL.Query().Get("target")
+
+	var cfg ClusterConfig
+	if target == "" {
+		// No target: if only one cluster is configured, use it.
+		if len(clusterMap) == 1 {
+			for _, c := range clusterMap {
+				cfg = c
+			}
+		} else {
+			msg := "missing 'target' query parameter (required when more than one cluster is configured)"
+			log.Warn(msg)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(msg))
+			return
+		}
+	} else {
+		var ok bool
+		cfg, ok = clusterMap[target]
+		if !ok {
+			msg := fmt.Sprintf("unknown target %q — not found in config", target)
+			log.Warn(msg)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(msg))
+			return
+		}
+	}
+
+	cluster := collector.IsilonCluster{
+		Host:        cfg.Host,
+		Port:        cfg.Port,
+		Username:    cfg.Username,
+		PasswordEnv: cfg.PasswordEnv,
+		Site:        cfg.Site,
+		QuotaOnly:   cfg.QuotaOnly,
+		Quotas: collector.Quotas{
+			Retry: cfg.QuotaRetry,
+		},
+	}
+
+	nc, err := collector.NewIsilonCollector(cluster, filters...)
 	if err != nil {
 		log.Warnf("Could not create exporter: %s", err)
 		w.WriteHeader(http.StatusBadRequest)
@@ -70,7 +102,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		prometheus.DefaultGatherer,
 		registry,
 	}
-	// Delegate http serving to Prometheus client Librar, which will call collector.Collect.
+	// Delegate http serving to Prometheus client library, which will call collector.Collect.
 	h := promhttp.InstrumentMetricHandler(
 		registry,
 		promhttp.HandlerFor(gatherers,
@@ -88,8 +120,11 @@ func main() {
 		listenAddress = kingpin.Flag("web.listen-address", "Address on which to expose metrics and web interface.").Default(":9300").String()
 		metricsPath   = kingpin.Flag("web.telemtry-path", "Path under which to expose metrics.").Default("/metrics").String()
 
-		//Isilon Specific Variables
-		cFQDN     = kingpin.Flag("isilon.cluster.fqdn", "FQDN for the isilon cluster to be scraped.").Default("localhost").String()
+		// Config file (preferred for multi-cluster)
+		configFile = kingpin.Flag("config.file", "Path to YAML config file listing clusters. If set, individual cluster flags are ignored.").Default("").String()
+
+		//Isilon Specific Variables (single-cluster / backward-compat mode)
+		cHost     = kingpin.Flag("isilon.cluster.host", "Hostname or IP address of the isilon cluster to be scraped.").Default("").String()
 		cPort     = kingpin.Flag("isilon.cluster.port", "Port to connect to the isilon cluster.").Default("8080").String()
 		cUname    = kingpin.Flag("isilon.cluster.username", "Username for access the isilon API.").Default("").String()
 		cPwdenv   = kingpin.Flag("isilon.cluster.password.env", "Environment variable that contains the password for the Isilon cluster user.").Default("ISILON_CLUSTER_PASSWORD").String()
@@ -102,35 +137,58 @@ func main() {
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
 
-	//Create an IsilonCluster struct and pass it the infor from the kingpin flags.
-	if *cUname == "" {
-		log.Fatalf("No cluster username specified.")
+	// Build the cluster map.
+	clusterMap = make(map[string]ClusterConfig)
+
+	if *configFile != "" {
+		cfg, err := loadConfig(*configFile)
+		if err != nil {
+			log.Fatalf("Could not load config file: %s", err)
+		}
+		for _, c := range cfg.Clusters {
+			if c.Port == "" {
+				c.Port = "8080"
+			}
+			if c.PasswordEnv == "" {
+				c.PasswordEnv = "ISILON_CLUSTER_PASSWORD"
+			}
+			if c.QuotaRetry == 0 {
+				c.QuotaRetry = 3
+			}
+			clusterMap[c.Host] = c
+		}
+		log.Infof("Loaded %d cluster(s) from config file %s", len(clusterMap), *configFile)
+	} else {
+		// Backward-compat: single cluster from flags.
+		if *cUname == "" {
+			log.Fatalf("No cluster username specified. Use --isilon.cluster.username or --config.file.")
+		}
+		if *cHost == "" {
+			log.Fatalf("No cluster host specified. Use --isilon.cluster.host or --config.file.")
+		}
+		clusterMap[*cHost] = ClusterConfig{
+			Host:        *cHost,
+			Port:        *cPort,
+			Username:    *cUname,
+			PasswordEnv: *cPwdenv,
+			Site:        *cSite,
+			QuotaOnly:   *quotaOnly,
+			QuotaRetry:  3,
+		}
+		log.Infof("Single-cluster mode: %s", *cHost)
 	}
 
-	fqdn = cFQDN
-	port = cPort
-	uname = cUname
-	pwdenv = cPwdenv
-	site = cSite
-	qOnly = quotaOnly
 	log.Infoln("Started prometheus-emcisilon-exporter", version.Info())
-
-	log.Infof("Pointed to cluster %s", *fqdn)
 	log.Infoln("Build context", version.BuildContext())
 
-	// This instance is only used to check collector creation and logging.
-	nc, err := collector.NewIsilonCollector(*fqdn, *port, *uname, *pwdenv, *site, false, *qOnly)
-	if err != nil {
-		log.Fatalf("Could not create collector: %s", err)
+	log.Infof("Configured clusters:")
+	fqdns := make([]string, 0, len(clusterMap))
+	for f := range clusterMap {
+		fqdns = append(fqdns, f)
 	}
-	log.Infof("Enable collectors:")
-	collectors := []string{}
-	for n := range nc.Collectors {
-		collectors = append(collectors, n)
-	}
-	sort.Strings(collectors)
-	for _, n := range collectors {
-		log.Infof(" - %s", n)
+	sort.Strings(fqdns)
+	for _, f := range fqdns {
+		log.Infof("  - %s", f)
 	}
 
 	http.HandleFunc(*metricsPath, handler)
@@ -145,7 +203,7 @@ func main() {
 	})
 
 	log.Infoln("Listening on", *listenAddress)
-	err = http.ListenAndServe(*listenAddress, nil)
+	err := http.ListenAndServe(*listenAddress, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

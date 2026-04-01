@@ -21,6 +21,7 @@ import (
 )
 
 type diskCollector struct {
+	cluster             IsilonCluster
 	diskBusyAll         *prometheus.Desc
 	diskIoschedQueueAll *prometheus.Desc
 	diskXfersInRateAll  *prometheus.Desc
@@ -32,33 +33,35 @@ func init() {
 	registerCollector("disk", defaultEnabled, NewDiskCollector)
 }
 
-//NewDiskCollector returns a new Collector exposing node disk statistics.
-func NewDiskCollector() (Collector, error) {
+// NewDiskCollector returns a new Collector exposing node disk statistics.
+func NewDiskCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &diskCollector{
+		cluster: cluster,
 		diskBusyAll: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "disk_busy_all"),
 			"Current disk busy percentage represented in 0.0-1.0.",
-			[]string{"node", "disk"}, ConstLabels,
+			[]string{"node", "disk"}, constLabels,
 		),
 		diskIoschedQueueAll: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "disk_iosched_queued_all"),
 			"Current queue depth for IO sceduler.",
-			[]string{"node", "disk"}, ConstLabels,
+			[]string{"node", "disk"}, constLabels,
 		),
 		diskXfersInRateAll: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "disk_xfers_in_rate_all"),
 			"Current disk ingest transfer rate.",
-			[]string{"node", "disk"}, ConstLabels,
+			[]string{"node", "disk"}, constLabels,
 		),
 		diskXfersOutRateAll: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "disk_xfers_out_rate_all"),
 			"Current disk egress transfer rate.",
-			[]string{"node", "disk"}, ConstLabels,
+			[]string{"node", "disk"}, constLabels,
 		),
 		diskLatencyAll: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "disk_latency_all"),
 			"Current disk latency.",
-			[]string{"node", "disk"}, ConstLabels,
+			[]string{"node", "disk"}, constLabels,
 		),
 	}, nil
 }
@@ -75,15 +78,15 @@ func (c *diskCollector) Update(ch chan<- prometheus.Metric) error {
 
 	for promStat, statKey := range keyMap {
 		begin := time.Now()
-		resp, err := isiclient.QueryStatsEngineMultiVal(IsiCluster.Client, statKey)
+		resp, err := isiclient.QueryStatsEngineMultiVal(c.cluster.Client, statKey)
 		duration := time.Since(begin)
-		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey)
+		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey, c.cluster.Name)
 		if err != nil {
 			log.Warnf("Error attempting to query stats engine with key %s: %s", statKey, err)
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey, c.cluster.Name)
 			errCount++
 		} else {
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey, c.cluster.Name)
 			for _, stat := range resp.Stats {
 				node := fmt.Sprintf("%v", stat.Devid)
 				for _, valset := range stat.ValueSet {

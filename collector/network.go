@@ -21,6 +21,7 @@ import (
 )
 
 type networkCollector struct {
+	cluster          IsilonCluster
 	netBytesInRate   *prometheus.Desc
 	netBytesOutRate  *prometheus.Desc
 	netErrorsInRate  *prometheus.Desc
@@ -31,28 +32,30 @@ func init() {
 	registerCollector("network", defaultEnabled, NewNetworkCollector)
 }
 
-//NewNetworkCollector returns a new Collector exposing node network statistics.
-func NewNetworkCollector() (Collector, error) {
+// NewNetworkCollector returns a new Collector exposing node network statistics.
+func NewNetworkCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &networkCollector{
+		cluster: cluster,
 		netBytesInRate: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "net_ext_bytes_in_rate"),
 			"Current network bytes in rate from external interfaces.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		netBytesOutRate: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "net_ext_bytes_out_rate"),
 			"Current network bytes out rate from external interfaces.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		netErrorsInRate: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "net_ext_errors_in_rate"),
 			"Input errors per second for a node's external interfaces.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		netErrorsOutRate: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "net_ext_errors_out_rate"),
 			"Output errors per seccond for a node's external interfaces.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 	}, nil
 }
@@ -67,14 +70,14 @@ func (c *networkCollector) Update(ch chan<- prometheus.Metric) error {
 
 	for promStat, statKey := range keyMap {
 		begin := time.Now()
-		resp, err := isiclient.QueryStatsEngineSingleVal(IsiCluster.Client, statKey)
+		resp, err := isiclient.QueryStatsEngineSingleVal(c.cluster.Client, statKey)
 		duration := time.Since(begin)
-		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey)
+		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey, c.cluster.Name)
 		if err != nil {
 			log.Warnf("Error attempting to query stats engine with key %s: %s", statKey, err)
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey, c.cluster.Name)
 		} else {
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey, c.cluster.Name)
 			for _, stat := range resp.Stats {
 				node := fmt.Sprintf("%v", stat.Devid)
 				ch <- prometheus.MustNewConstMetric(promStat, prometheus.GaugeValue, stat.Value, node)

@@ -21,6 +21,7 @@ import (
 )
 
 type clusterHealthCollector struct {
+	cluster       IsilonCluster
 	clusterHealth *prometheus.Desc
 	onefsVersion  *prometheus.Desc
 }
@@ -29,18 +30,20 @@ func init() {
 	registerCollector("cluster_health", defaultEnabled, NewClusterHealthCollector)
 }
 
-//NewClusterHealthCollector returns a new Collector exposing cluster health information.
-func NewClusterHealthCollector() (Collector, error) {
+// NewClusterHealthCollector returns a new Collector exposing cluster health information.
+func NewClusterHealthCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &clusterHealthCollector{
+		cluster: cluster,
 		clusterHealth: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "health"),
 			"Current health of the cluster. Int of 1 2 or 3",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 		onefsVersion: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, clusterCollectorSubsystem, "onefs_version"),
 			"Current OneFS version. This returns a 1 always, the version is a label to the metric.",
-			[]string{"version"}, ConstLabels,
+			[]string{"version"}, constLabels,
 		),
 	}, nil
 }
@@ -53,22 +56,22 @@ func (c *clusterHealthCollector) Update(ch chan<- prometheus.Metric) error {
 
 	for promStat, statKey := range keyMap {
 		begin := time.Now()
-		resp, err := isiclient.QueryStatsEngineSingleVal(IsiCluster.Client, statKey)
+		resp, err := isiclient.QueryStatsEngineSingleVal(c.cluster.Client, statKey)
 		duration := time.Since(begin)
-		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey)
+		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey, c.cluster.Name)
 		if err != nil {
 			log.Warnf("Error attempting to query stats engine with key %s: %s", statKey, err)
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey, c.cluster.Name)
 			errCount++
 		} else {
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey, c.cluster.Name)
 			for _, stat := range resp.Stats {
 				ch <- prometheus.MustNewConstMetric(promStat, prometheus.GaugeValue, stat.Value)
 			}
 		}
 	}
 
-	version, err := isiclient.GetOneFsVersion(IsiCluster.Client)
+	version, err := isiclient.GetOneFsVersion(c.cluster.Client)
 	if err != nil {
 		log.Warnf("Unable to update the Onefs version stat.")
 		errCount++

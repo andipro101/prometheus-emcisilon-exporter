@@ -23,6 +23,7 @@ import (
 )
 
 type quotaCollector struct {
+	cluster                            IsilonCluster
 	quotaIterationCollectionTime       *prometheus.Desc
 	quotaContainer                     *prometheus.Desc
 	quotaEnforced                      *prometheus.Desc
@@ -64,98 +65,100 @@ func init() {
 	exceededFlag = kingpin.Flag(exceededFlagName, exceededFlagHelp).Default("false").Bool()
 }
 
-//NewQuotaCollector returns a new Collector exposing node health information.
-func NewQuotaCollector() (Collector, error) {
+// NewQuotaCollector returns a new Collector exposing quota information.
+func NewQuotaCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &quotaCollector{
+		cluster: cluster,
 		quotaIterationCollectionTime: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "api_collection_duration"),
 			"Returns the amount of time it took to collect an iteration of quotas from the api.",
-			[]string{"iteration"}, ConstLabels,
+			[]string{"iteration"}, constLabels,
 		),
 		quotaContainer: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "container"),
 			"1 if quota is a container quota, 0 if not.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaEnforced: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "enforced"),
 			"1 if quota is enforced, 2 if quota is an advisory quota.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaIncludeSnapshots: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "include_snapshots"),
 			"1 if quota includes snapshots in usage, 0 if not.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaUsageLogical: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "usage_logical"),
 			"Apparent bytes used by governed data.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaUsageInodes: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "usage_inodes"),
 			"Number of inodes (filesystem entities) used by governed data.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaUsagePhysical: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "usage_physical"),
 			"Bytes used for governed data and filesystem overhead.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaThresholdAdvisory: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "threshold_advisory"),
 			"Usage bytes at which notifications will be sent but writes will not be denied.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaThresholdAdvisoryExceeded: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "threshold_advisory_exceeded"),
 			"1 if the advisory threshold has been hit.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaThresholdAdvisoryLastExceeded: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "threshold_advisory_last_exceeded"),
 			"Timestamp of when threshold was last exceeded.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaThresholdSoft: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "threshold_soft"),
 			"Usage bytes at which notifications will be sent and soft grace time will be started.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaThresholdSoftExceeded: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "threshold_soft_exceeded"),
 			"1 if the soft threshold has been hit.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaThresholdSoftGrace: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "threshold_soft_grace"),
 			"Time in seconds after which the soft threshold has been hit before writes will be denied.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaThresholdSoftLastExceeded: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "threshold_soft_last_exceeded"),
 			"Timestamp of when threshold was last exceeded.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaThresholdHard: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "threshold_hard"),
 			"Usage bytes at which further writes will be denied.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaThresholdHardExceeded: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "threshold_hard_exceeded"),
 			"True if the hard threshold has been hit.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaThresholdHardLastExceeded: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "threshold_hard_last_exceeded"),
 			"Timestamp of when threshold was last exceeded.",
-			[]string{"id", "path", "name", "type"}, ConstLabels,
+			[]string{"id", "path", "name", "type"}, constLabels,
 		),
 		quotaCollectedNumber: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, quotaCollectorSubsystem, "collected_total"),
 			"Number of quotas collected by the quota collector.",
-			[]string{"attempt"}, ConstLabels,
+			[]string{"attempt"}, constLabels,
 		),
 	}, nil
 }
@@ -195,7 +198,6 @@ func (c *quotaCollector) Update(ch chan<- prometheus.Metric) error {
 		ch <- prometheus.MustNewConstMetric(c.quotaIterationCollectionTime, prometheus.GaugeValue, duration.Seconds(), fmt.Sprintf("%v", collectNumber))
 
 		//Range over all quotas in this iteration.
-
 		for _, quota := range quotas.Quotas {
 			// Get username for the quota
 			var name string
@@ -231,29 +233,29 @@ func (c *quotaCollector) Update(ch chan<- prometheus.Metric) error {
 
 	ch <- prometheus.MustNewConstMetric(c.quotaCollectedNumber, prometheus.GaugeValue, float64(collectedCount), string(attempt))
 
-	if IsiCluster.QuotaOnly {
-		if (collectedCount != IsiCluster.Quotas.Count) && (!*exceededFlag) && (*typeFlag == "all") {
-			log.Warnf("Collected %v quotas of a total of %v", collectedCount, IsiCluster.Quotas.Count)
-			if attempt <= IsiCluster.Quotas.Retry {
+	if c.cluster.QuotaOnly {
+		if (collectedCount != c.cluster.Quotas.Count) && (!*exceededFlag) && (*typeFlag == "all") {
+			log.Warnf("Collected %v quotas of a total of %v", collectedCount, c.cluster.Quotas.Count)
+			if attempt <= c.cluster.Quotas.Retry {
 				log.Infof("Recursive quota collection attempt number %v", attempt+1)
 				err = c.Update(ch)
 			} else {
-				mesg := fmt.Sprintf("eexceded retry attempts to collect quota information: attempt %v/%v", attempt, IsiCluster.Quotas.Count)
+				mesg := fmt.Sprintf("eexceded retry attempts to collect quota information: attempt %v/%v", attempt, c.cluster.Quotas.Count)
 				err = errors.New(mesg)
 				return err
 			}
-		} else if (collectedCount == 0) && (IsiCluster.Quotas.Count > 0) {
-			log.Warnf("Collected %v quotas of a total of %v", collectedCount, IsiCluster.Quotas.Count)
-			if attempt <= IsiCluster.Quotas.Retry {
+		} else if (collectedCount == 0) && (c.cluster.Quotas.Count > 0) {
+			log.Warnf("Collected %v quotas of a total of %v", collectedCount, c.cluster.Quotas.Count)
+			if attempt <= c.cluster.Quotas.Retry {
 				log.Infof("Recursive quota collection attempt number %v", attempt+1)
 				err = c.Update(ch)
 			} else {
-				mesg := fmt.Sprintf("eexceded retry attempts to collect quota information: attempt %v/%v", attempt, IsiCluster.Quotas.Count)
+				mesg := fmt.Sprintf("eexceded retry attempts to collect quota information: attempt %v/%v", attempt, c.cluster.Quotas.Count)
 				err = errors.New(mesg)
 				return err
 			}
 		} else {
-			log.Infof("Collected %v quotas of a total of %v", collectedCount, IsiCluster.Quotas.Count)
+			log.Infof("Collected %v quotas of a total of %v", collectedCount, c.cluster.Quotas.Count)
 		}
 	} else {
 		log.Debugf("Collected %v quotas.", collectedCount)
@@ -267,21 +269,21 @@ func (c *quotaCollector) getQuotas() (isiclient.IsiQuotas, error) {
 	var collectErr error
 	var quotas isiclient.IsiQuotas
 	if rtoken != "" && rtoken != "unset" {
-		quotas, collectErr = isiclient.GetQuotasWithResume(IsiCluster.Client, rtoken)
+		quotas, collectErr = isiclient.GetQuotasWithResume(c.cluster.Client, rtoken)
 	} else {
 		switch *typeFlag {
 		case "directory":
-			quotas, collectErr = isiclient.GetQuotasOfType(IsiCluster.Client, *exceededFlag, *typeFlag)
+			quotas, collectErr = isiclient.GetQuotasOfType(c.cluster.Client, *exceededFlag, *typeFlag)
 		case "user":
-			quotas, collectErr = isiclient.GetQuotasOfType(IsiCluster.Client, *exceededFlag, *typeFlag)
+			quotas, collectErr = isiclient.GetQuotasOfType(c.cluster.Client, *exceededFlag, *typeFlag)
 		case "group":
-			quotas, collectErr = isiclient.GetQuotasOfType(IsiCluster.Client, *exceededFlag, *typeFlag)
+			quotas, collectErr = isiclient.GetQuotasOfType(c.cluster.Client, *exceededFlag, *typeFlag)
 		case "default-user":
-			quotas, collectErr = isiclient.GetQuotasOfType(IsiCluster.Client, *exceededFlag, *typeFlag)
+			quotas, collectErr = isiclient.GetQuotasOfType(c.cluster.Client, *exceededFlag, *typeFlag)
 		case "default-group":
-			quotas, collectErr = isiclient.GetQuotasOfType(IsiCluster.Client, *exceededFlag, *typeFlag)
+			quotas, collectErr = isiclient.GetQuotasOfType(c.cluster.Client, *exceededFlag, *typeFlag)
 		case "all":
-			quotas, collectErr = isiclient.GetAllQuotas(IsiCluster.Client, *exceededFlag)
+			quotas, collectErr = isiclient.GetAllQuotas(c.cluster.Client, *exceededFlag)
 		default:
 			mesg := fmt.Sprintf("Unknown quota type: %s", *typeFlag)
 			collectErr = errors.New(mesg)
@@ -351,7 +353,6 @@ func (c *quotaCollector) updateMetaData(ch chan<- prometheus.Metric, q isiclient
 }
 
 func (c *quotaCollector) updateUsage(ch chan<- prometheus.Metric, q isiclient.IsiQuota, n string) error {
-	// Update logical
 	ch <- prometheus.MustNewConstMetric(c.quotaUsageLogical, prometheus.GaugeValue, q.Usage.Logical, q.ID, q.Path, n, q.Type)
 	ch <- prometheus.MustNewConstMetric(c.quotaUsageInodes, prometheus.GaugeValue, q.Usage.Inodes, q.ID, q.Path, n, q.Type)
 	ch <- prometheus.MustNewConstMetric(c.quotaUsagePhysical, prometheus.GaugeValue, q.Usage.Physical, q.ID, q.Path, n, q.Type)
@@ -359,7 +360,6 @@ func (c *quotaCollector) updateUsage(ch chan<- prometheus.Metric, q isiclient.Is
 }
 
 func (c *quotaCollector) updateThresholds(ch chan<- prometheus.Metric, q isiclient.IsiQuota, n string) error {
-	//gather advisory thresholds
 	var (
 		ae  float64
 		he  float64
@@ -384,7 +384,6 @@ func (c *quotaCollector) updateThresholds(ch chan<- prometheus.Metric, q isiclie
 	ch <- prometheus.MustNewConstMetric(c.quotaThresholdAdvisoryExceeded, prometheus.GaugeValue, ae, q.ID, q.Path, n, q.Type)
 	ch <- prometheus.MustNewConstMetric(c.quotaThresholdAdvisoryLastExceeded, prometheus.GaugeValue, ale, q.ID, q.Path, n, q.Type)
 
-	//gather hard thresholds
 	ch <- prometheus.MustNewConstMetric(c.quotaThresholdHard, prometheus.GaugeValue, q.Thresholds.Hard, q.ID, q.Path, n, q.Type)
 	if q.Thresholds.HardExceeded {
 		he = 1
@@ -400,7 +399,6 @@ func (c *quotaCollector) updateThresholds(ch chan<- prometheus.Metric, q isiclie
 	ch <- prometheus.MustNewConstMetric(c.quotaThresholdHardExceeded, prometheus.GaugeValue, he, q.ID, q.Path, n, q.Type)
 	ch <- prometheus.MustNewConstMetric(c.quotaThresholdHardLastExceeded, prometheus.GaugeValue, hle, q.ID, q.Path, n, q.Type)
 
-	//gather soft thresholds
 	ch <- prometheus.MustNewConstMetric(c.quotaThresholdSoft, prometheus.GaugeValue, q.Thresholds.Soft, q.ID, q.Path, n, q.Type)
 	if q.Thresholds.SoftExceeded {
 		se = 1

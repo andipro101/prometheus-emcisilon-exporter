@@ -21,6 +21,7 @@ import (
 )
 
 type nodePartitionCollector struct {
+	cluster                           IsilonCluster
 	nodePartitionUsedSpacePercentage  *prometheus.Desc
 	nodePartitionCount                *prometheus.Desc
 	nodePartitionFileNodesFree        *prometheus.Desc
@@ -32,33 +33,35 @@ func init() {
 	registerCollector("node_partition", defaultEnabled, NewNodePartitionCollector)
 }
 
-//NewNodePartitionCollector exposed various metrics and information about nodes.
-func NewNodePartitionCollector() (Collector, error) {
+// NewNodePartitionCollector exposed various metrics and information about nodes.
+func NewNodePartitionCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &nodePartitionCollector{
+		cluster: cluster,
 		nodePartitionUsedSpacePercentage: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "partition_used_space_percentage"),
 			"Percentage of space used on a partition.",
-			[]string{"node", "node_id", "mount_point"}, ConstLabels,
+			[]string{"node", "node_id", "mount_point"}, constLabels,
 		),
 		nodePartitionCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "partition_count"),
 			"Count of the total number of partitions on a node.",
-			[]string{"node", "node_id"}, ConstLabels,
+			[]string{"node", "node_id"}, constLabels,
 		),
 		nodePartitionFileNodesFree: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "partition_filenodes_free"),
 			"Number of filenodes free on a partition.",
-			[]string{"node", "node_id", "mount_point"}, ConstLabels,
+			[]string{"node", "node_id", "mount_point"}, constLabels,
 		),
 		nodePartitionFileNodesTotal: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "partition_filenodes_total"),
 			"Total number of filenodes on a partition.",
-			[]string{"node", "node_id", "mount_point"}, ConstLabels,
+			[]string{"node", "node_id", "mount_point"}, constLabels,
 		),
 		nodePartitionFileNodesFreePercent: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "partition_filenodes_free_percent"),
 			"Percentage of filenodes free on a partition.",
-			[]string{"node", "node_id", "mount_point"}, ConstLabels,
+			[]string{"node", "node_id", "mount_point"}, constLabels,
 		),
 	}, nil
 }
@@ -69,7 +72,7 @@ func (c *nodePartitionCollector) Update(ch chan<- prometheus.Metric) error {
 }
 
 func (c *nodePartitionCollector) updatePartitionStats(ch chan<- prometheus.Metric) error {
-	resp, err := isiclient.GetNodesPartitions(IsiCluster.Client)
+	resp, err := isiclient.GetNodesPartitions(c.cluster.Client)
 	if err != nil {
 		return err
 	}

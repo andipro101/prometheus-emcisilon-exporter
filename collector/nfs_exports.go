@@ -17,6 +17,7 @@ import (
 )
 
 type nfsExportsCollector struct {
+	cluster     IsilonCluster
 	exportCount *prometheus.Desc
 }
 
@@ -24,19 +25,21 @@ func init() {
 	registerCollector("nfs_exports", defaultEnabled, NewNfsExportsCollector)
 }
 
-//NewNfsExportsCollector exposed various metrics and information about nodes.
-func NewNfsExportsCollector() (Collector, error) {
+// NewNfsExportsCollector exposed various metrics and information about NFS exports.
+func NewNfsExportsCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &nfsExportsCollector{
+		cluster: cluster,
 		exportCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "nfs", "export_total"),
 			"Total number of NFS exports on a cluster.",
-			nil, ConstLabels,
+			nil, constLabels,
 		),
 	}, nil
 }
 
 func (c *nfsExportsCollector) Update(ch chan<- prometheus.Metric) error {
-	resp, err := isiclient.GetExportSummary(IsiCluster.Client)
+	resp, err := isiclient.GetExportSummary(c.cluster.Client)
 	if err != nil {
 		return err
 	}

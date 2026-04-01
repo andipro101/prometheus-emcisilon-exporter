@@ -28,12 +28,25 @@ const (
 	namespace       = "isilon"
 )
 
+// statsEngineCallDuration and statsEngineCallFailure are shared across all
+// cluster instances (cluster name is a variable label rather than a const label).
 var (
-	factories      = make(map[string]func() (Collector, error))
+	statsEngineCallDuration = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "stats_engine", "call_duration_seconds"),
+		"Duration in seconds a call to the stats engine takes.",
+		[]string{"stat_key", "cluster"}, nil,
+	)
+	statsEngineCallFailure = prometheus.NewDesc(
+		prometheus.BuildFQName(namespace, "stats_engine", "call_success"),
+		"0 = Successful, 1 = Failure.  Represent the successful call or failure to the stats engine.",
+		[]string{"stat_key", "cluster"}, nil,
+	)
+
+	factories      = make(map[string]func(IsilonCluster) (Collector, error))
 	collectorState = make(map[string]*bool)
 )
 
-func registerCollector(collector string, isDefaultEnabled bool, factory func() (Collector, error)) {
+func registerCollector(collector string, isDefaultEnabled bool, factory func(IsilonCluster) (Collector, error)) {
 	var helpDefaultState string
 	if isDefaultEnabled {
 		helpDefaultState = "enabled"
@@ -51,77 +64,57 @@ func registerCollector(collector string, isDefaultEnabled bool, factory func() (
 	factories[collector] = factory
 }
 
-//IsilonCollector implements the prometheus.Collector interface.
+// isilonCollector implements the prometheus.Collector interface.
 type isilonCollector struct {
-	Collectors map[string]Collector
+	Collectors           map[string]Collector
+	cluster              IsilonCluster
+	scrapeDurationDesc   *prometheus.Desc
+	scrapeSuccessDesc    *prometheus.Desc
+	exporterDurationDesc *prometheus.Desc
 }
 
-// NewIsilonCollector creates a new IsilonCollector
-func NewIsilonCollector(fqdn string, port string, uname string, pwdenv string, site string, auth bool, qOnly bool, filters ...string) (*isilonCollector, error) {
-	if auth {
-		// Take the struct that was generated in main and use it as the configuration for connecting to the clusters.
-		IsiCluster.FQDN = fqdn
-		IsiCluster.Port = port
-		IsiCluster.Username = uname
-		IsiCluster.PasswordEnv = pwdenv
-		IsiCluster.Site = site
-		IsiCluster.QuotaOnly = qOnly
-
-		// Get the the goisilon connector and put it into the shared IsiClusterConfig struct.
-		log.Debugf("Creating connection to the cluster endpoint %s", IsiCluster.FQDN)
-		err := GetClusterConnector()
-		if err != nil {
-			return nil, fmt.Errorf("Unable to connect to the isilon cluster %s: %s", IsiCluster.FQDN, err)
-		}
-
-		log.Debug("Getting isi config cluster name from identity endpoint.")
-		//Get the clusster name from the isilon client.
-		err = SetClusterConfigName()
-		if err != nil {
-			return nil, fmt.Errorf("Unable to get the cluster config name from the identity endpoint: %s", err)
-		}
-
-		if IsiCluster.QuotaOnly {
-			log.Debug("Setting up collector to only collect quota info.")
-			err := GetNumQuotas()
-			if err != nil {
-				return nil, fmt.Errorf("Unable to get count of quotas from the system. %s", err)
-			}
-
-			flag := kingpin.Flag("collector.quota.retry", "Number of time to attempt collection of quota metrics (default: 3).").Default("3").Int64()
-			IsiCluster.Quotas.Retry = *flag
-		}
-
-		// Create descriptors for collector leve metrics.
-		scrapeDurationDesc = prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "scrape", "collector_duration_seconds"),
-			"isilon_exporter: Duration of a collector scrape,",
-			[]string{"collector"}, ConstLabels,
-		)
-		scrapeSuccessDesc = prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "scrape", "collector_success"),
-			"isilon_exporter: Whether a collector succeeded.",
-			[]string{"collector"}, ConstLabels,
-		)
-		exporterDurationDesc = prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "exporter", "duration_seconds"),
-			"Duration in second of the entire exporter run.",
-			nil, ConstLabels,
-		)
-		statsEngineCallFailure = prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "stats_engine", "call_success"),
-			"0 = Successful, 1 = Failure.  Represent the successful call or failure to the stats engine.",
-			[]string{"stat_key"}, ConstLabels,
-		)
-		statsEngineCallDuration = prometheus.NewDesc(
-			prometheus.BuildFQName(namespace, "stats_engine", "call_duration_seconds"),
-			"Duration in seconds a call to the stats engine takes.",
-			[]string{"stat_key"}, ConstLabels,
-		)
+// NewIsilonCollector creates a new isilonCollector for the given cluster.
+func NewIsilonCollector(cluster IsilonCluster, filters ...string) (*isilonCollector, error) {
+	log.Debugf("Creating connection to the cluster endpoint %s", cluster.Host)
+	if err := cluster.Connect(); err != nil {
+		return nil, fmt.Errorf("unable to connect to the isilon cluster %s: %s", cluster.Host, err)
 	}
 
-	//If qOnly then set all collectors to disabled except for quotas
-	if qOnly {
+	log.Debug("Getting isi config cluster name from identity endpoint.")
+	if err := cluster.FetchName(); err != nil {
+		return nil, fmt.Errorf("unable to get the cluster config name from the identity endpoint: %s", err)
+	}
+
+	if cluster.QuotaOnly {
+		log.Debug("Setting up collector to only collect quota info.")
+		if err := cluster.FetchNumQuotas(); err != nil {
+			return nil, fmt.Errorf("unable to get count of quotas from the system: %s", err)
+		}
+	}
+
+	constLabels := makeConstLabels(cluster)
+
+	ic := &isilonCollector{
+		cluster: cluster,
+		scrapeDurationDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "scrape", "collector_duration_seconds"),
+			"isilon_exporter: Duration of a collector scrape,",
+			[]string{"collector"}, constLabels,
+		),
+		scrapeSuccessDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "scrape", "collector_success"),
+			"isilon_exporter: Whether a collector succeeded.",
+			[]string{"collector"}, constLabels,
+		),
+		exporterDurationDesc: prometheus.NewDesc(
+			prometheus.BuildFQName(namespace, "exporter", "duration_seconds"),
+			"Duration in second of the entire exporter run.",
+			nil, constLabels,
+		),
+	}
+
+	// If quota_only, disable all collectors except quota.
+	if cluster.QuotaOnly {
 		var disabled = false
 		var enabled = true
 		for key := range collectorState {
@@ -144,26 +137,28 @@ func NewIsilonCollector(fqdn string, port string, uname string, pwdenv string, s
 		}
 		f[filter] = true
 	}
+
 	collectors := make(map[string]Collector)
 	for key, enabled := range collectorState {
 		if *enabled {
-			collector, err := factories[key]()
+			c, err := factories[key](cluster)
 			if err != nil {
 				return nil, err
 			}
 			if len(f) == 0 || f[key] {
-				collectors[key] = collector
+				collectors[key] = c
 			}
 		}
 	}
-	return &isilonCollector{Collectors: collectors}, nil
+	ic.Collectors = collectors
+	return ic, nil
 }
 
-// Descibe implements the prometheus.Collector interface.
+// Describe implements the prometheus.Collector interface.
 func (n isilonCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- scrapeDurationDesc
-	ch <- scrapeSuccessDesc
-	ch <- exporterDurationDesc
+	ch <- n.scrapeDurationDesc
+	ch <- n.scrapeSuccessDesc
+	ch <- n.exporterDurationDesc
 	ch <- statsEngineCallDuration
 	ch <- statsEngineCallFailure
 }
@@ -175,17 +170,17 @@ func (n isilonCollector) Collect(ch chan<- prometheus.Metric) {
 	wg.Add(len(n.Collectors))
 	for name, c := range n.Collectors {
 		go func(name string, c Collector) {
-			execute(name, c, ch)
+			n.execute(name, c, ch)
 			wg.Done()
 		}(name, c)
 	}
 	wg.Wait()
 	duration := time.Since(begin)
 	log.Debugf("Exporter finished after %fs", duration.Seconds())
-	ch <- prometheus.MustNewConstMetric(exporterDurationDesc, prometheus.GaugeValue, duration.Seconds())
+	ch <- prometheus.MustNewConstMetric(n.exporterDurationDesc, prometheus.GaugeValue, duration.Seconds())
 }
 
-func execute(name string, c Collector, ch chan<- prometheus.Metric) {
+func (n isilonCollector) execute(name string, c Collector, ch chan<- prometheus.Metric) {
 	begin := time.Now()
 	err := c.Update(ch)
 	duration := time.Since(begin)
@@ -198,8 +193,8 @@ func execute(name string, c Collector, ch chan<- prometheus.Metric) {
 		log.Debugf("OK: %s collector succeeded after %fs.", name, duration.Seconds())
 		success = 1
 	}
-	ch <- prometheus.MustNewConstMetric(scrapeDurationDesc, prometheus.GaugeValue, duration.Seconds(), name)
-	ch <- prometheus.MustNewConstMetric(scrapeSuccessDesc, prometheus.GaugeValue, success, name)
+	ch <- prometheus.MustNewConstMetric(n.scrapeDurationDesc, prometheus.GaugeValue, duration.Seconds(), name)
+	ch <- prometheus.MustNewConstMetric(n.scrapeSuccessDesc, prometheus.GaugeValue, success, name)
 }
 
 // Collector is the interface a collector has to implement.

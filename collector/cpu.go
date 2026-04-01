@@ -22,6 +22,7 @@ import (
 )
 
 type cpuCollector struct {
+	cluster   IsilonCluster
 	cpuCount  *prometheus.Desc
 	cpuIdle   *prometheus.Desc
 	cpuUser   *prometheus.Desc
@@ -35,43 +36,45 @@ func init() {
 	registerCollector("cpu", defaultEnabled, NewCPUCollector)
 }
 
-//NewCPUCollector returns a new Collector exposing node cpu statistics.
-func NewCPUCollector() (Collector, error) {
+// NewCPUCollector returns a new Collector exposing node cpu statistics.
+func NewCPUCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &cpuCollector{
+		cluster: cluster,
 		cpuCount: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "cpu_count"),
 			"Count of number of cpu a node contains.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		cpuIdle: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "cpu_idle_avg"),
 			"Current cpu idle percentage for the node.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		cpuUser: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "cpu_user_avg"),
 			"Current cpu busy percentage for user mode represented in 0.0-1.0.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		cpuSys: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "cpu_sys_avg"),
 			"Current cpu busy percentage for sys mode represented in 0.0-1.0.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		load1min: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "load_1min"),
 			"Current 1min node load.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		load5min: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "load_5min"),
 			"Current 5min node load.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 		load15min: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, nodeCollectorSubsystem, "load_15min"),
 			"Current 15min node load.",
-			[]string{"node"}, ConstLabels,
+			[]string{"node"}, constLabels,
 		),
 	}, nil
 }
@@ -90,15 +93,15 @@ func (c *cpuCollector) Update(ch chan<- prometheus.Metric) error {
 
 	for promStat, statKey := range keyMap {
 		begin := time.Now()
-		resp, err := isiclient.QueryStatsEngineSingleVal(IsiCluster.Client, statKey)
+		resp, err := isiclient.QueryStatsEngineSingleVal(c.cluster.Client, statKey)
 		duration := time.Since(begin)
-		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey)
+		ch <- prometheus.MustNewConstMetric(statsEngineCallDuration, prometheus.GaugeValue, duration.Seconds(), statKey, c.cluster.Name)
 		if err != nil {
 			log.Warnf("Error attempting to query stats engine with key %s: %s", statKey, err)
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 1, statKey, c.cluster.Name)
 			errCount++
 		} else {
-			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey)
+			ch <- prometheus.MustNewConstMetric(statsEngineCallFailure, prometheus.GaugeValue, 0, statKey, c.cluster.Name)
 			for _, stat := range resp.Stats {
 				var val float64
 				node := fmt.Sprintf("%v", stat.Devid)

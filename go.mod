@@ -9,6 +9,8 @@ require (
 	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/prometheus/client_golang v1.1.0
 	github.com/prometheus/common v0.7.0
+	github.com/sirupsen/logrus v1.4.2 // indirect
 	github.com/thecodeteam/goisilon v1.7.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
+	gopkg.in/yaml.v2 v2.4.0 // indirect
 )

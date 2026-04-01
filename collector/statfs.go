@@ -16,6 +16,7 @@ import (
 )
 
 type statfsCollector struct {
+	cluster                   IsilonCluster
 	statfsFileBlockAvail      *prometheus.Desc
 	statfsFileBlockFree       *prometheus.Desc
 	statfsFileBlockTotal      *prometheus.Desc
@@ -31,59 +32,61 @@ func init() {
 	registerCollector("statfs", defaultEnabled, NewStatfsCollector)
 }
 
-//NewStatfsCollector exposed various metrics and information about nodes.
-func NewStatfsCollector() (Collector, error) {
+// NewStatfsCollector exposed various metrics and information about nodes.
+func NewStatfsCollector(cluster IsilonCluster) (Collector, error) {
+	constLabels := makeConstLabels(cluster)
 	return &statfsCollector{
+		cluster: cluster,
 		statfsFileBlockAvail: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "stafs", "file_block_avail"),
 			"The filesystem fragment size.",
-			[]string{"mount_point"}, ConstLabels,
+			[]string{"mount_point"}, constLabels,
 		),
 		statfsFileBlockFree: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "statfs", "file_block_free"),
 			"The number of free blocks in the filesystem.",
-			[]string{"mount_point"}, ConstLabels,
+			[]string{"mount_point"}, constLabels,
 		),
 		statfsFileBlockSize: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "statfs", "file_block_size"),
 			"The filesystem fragment size.",
-			[]string{"mount_point"}, ConstLabels,
+			[]string{"mount_point"}, constLabels,
 		),
 		statfsFileBlockTotal: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "statfs", "file_block_total"),
 			"The total number of data blocks in the filesystem.",
-			[]string{"mount_point"}, ConstLabels,
+			[]string{"mount_point"}, constLabels,
 		),
 		statfsFileIOSize: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "statfs", "file_io_size"),
 			"The optimal transfer block size.",
-			[]string{"mount_point"}, ConstLabels,
+			[]string{"mount_point"}, constLabels,
 		),
 		statfsFileNameMax: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "statfs", "file_name_max"),
 			"The maximum length of a file name.",
-			[]string{"mount_point"}, ConstLabels,
+			[]string{"mount_point"}, constLabels,
 		),
 		statfsFileNodeTotal: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "statfs", "file_node_total"),
 			"The total number of file nodes in the filesystem.",
-			[]string{"mount_point"}, ConstLabels,
+			[]string{"mount_point"}, constLabels,
 		),
 		statfsFileNodeFree: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "statfs", "file_node_free"),
 			"The number of free blocks in the filesystem.",
-			[]string{"mount_point"}, ConstLabels,
+			[]string{"mount_point"}, constLabels,
 		),
 		statfsFileNodeFreePercent: prometheus.NewDesc(
 			prometheus.BuildFQName(namespace, "statfs", "file_node_free_percent"),
 			"The percentage of free file nodes in the filesystem.",
-			[]string{"mount_point"}, ConstLabels,
+			[]string{"mount_point"}, constLabels,
 		),
 	}, nil
 }
 
 func (c *statfsCollector) Update(ch chan<- prometheus.Metric) error {
-	resp, err := isiclient.GetStatfs(IsiCluster.Client)
+	resp, err := isiclient.GetStatfs(c.cluster.Client)
 	if err != nil {
 		return err
 	}
